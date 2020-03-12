@@ -1,6 +1,7 @@
-<h1 align="center">
+<p align="center">
   :octocat: 🎬
-  <br/>
+</p>
+<h1 align="center">
   actions
 </h1>
 
