@@ -6,6 +6,8 @@ use chrono::{offset::TimeZone, DateTime, Datelike, Utc};
 use colored::Colorize;
 use futures::{stream::Stream, StreamExt};
 use reqwest::Client;
+use spinner::SpinnerBuilder;
+use humantime::format_duration;
 use std::{
     cell::RefCell,
     cmp, env,
@@ -13,10 +15,38 @@ use std::{
     io::{stdout, Write},
     pin::Pin,
     rc::Rc,
+    str::FromStr,
     time::Duration,
 };
 use structopt::StructOpt;
 use tabwriter::TabWriter;
+
+#[derive(Debug)]
+pub enum Format {
+    Tab,
+    Csv,
+}
+
+impl Default for Format {
+    fn default() -> Self {
+        Format::Tab
+    }
+}
+
+impl FromStr for Format {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "csv" => Ok(Format::Csv),
+            "tab" => Ok(Format::Tab),
+            other => Err(format!(
+                "{} is not a supported format. try 'csv' or 'tab' instead",
+                other
+            )),
+        }
+    }
+}
 
 /// 🏃 Get workflow run information
 #[derive(StructOpt, Debug)]
@@ -32,6 +62,9 @@ pub enum Runs {
         /// Since date in yyyy-mm-dd format
         #[structopt(short, long, env = "ACTIONS_SINCE")]
         since: Option<String>,
+        /// Format of output 'tab' (default) or 'csv'
+        #[structopt(default_value = "tab", short, long, env = "ACTIONS_FORMAT")]
+        format: Format,
     },
     /// List runs for a given workflow
     List {
@@ -44,6 +77,9 @@ pub enum Runs {
         /// Since date in yyyy-mm-dd format
         #[structopt(short, long, env = "ACTIONS_SINCE")]
         since: Option<String>,
+        /// Format of output 'tab' (default) or 'csv'
+        #[structopt(default_value = "tab", short, long, env = "ACTIONS_FORMAT")]
+        format: Format,
     },
 }
 
@@ -111,12 +147,19 @@ fn date_or_first_of_the_month(timestamp: Option<impl AsRef<str>>) -> DateTime<Ut
         })
 }
 
+fn spinner() -> SpinnerBuilder {
+    SpinnerBuilder::new("Fetching run data...".into())
+        .spinner(vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
+        .step(std::time::Duration::from_millis(100))
+}
+
 pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
     match args {
         Runs::Stats {
             repository,
             workflow,
             since,
+            ..
         } => {
             let since = date_or_first_of_the_month(since);
             let writer = Rc::new(RefCell::new(TabWriter::new(stdout())));
@@ -125,13 +168,10 @@ pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
             let token = env::var("GITHUB_TOKEN")
                 .map_err(|_| StringErr("Please provide a GITHUB_TOKEN env variable".into()))?;
             let requests = Requests { client, token };
-            let spinner = spinner::SpinnerBuilder::new("Fetching run data...".into())
-                .spinner(vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-                .step(std::time::Duration::from_millis(100))
-                .start();
+            let spinner = spinner().start();
             writeln!(
                 writer.clone().borrow_mut(),
-                "\nWorkflow\tRuns\tTotal Duration\tMin Duration\tMax Duration"
+                "Workflow\tRuns\tTotal Duration\tMin Duration\tMax Duration"
             )?;
             let mut workflows =
                 filtered_workflows(workflow, requests.clone().workflows(repository.clone()))
@@ -164,10 +204,10 @@ pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
                             "{}\t{}\t{}\t{}\t{}",
                             workflow.name.bold(),
                             count,
-                            humantime::format_duration(total),
-                            min.map(|min| humantime::format_duration(min).to_string())
+                            format_duration(total),
+                            min.map(|min| format_duration(min).to_string())
                                 .unwrap_or_else(|| "-".into()),
-                            max.map(|max| humantime::format_duration(max).to_string())
+                            max.map(|max| format_duration(max).to_string())
                                 .unwrap_or_else(|| "-".into())
                         )
                         .unwrap();
@@ -190,6 +230,7 @@ pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
             repository,
             workflow,
             since,
+            ..
         } => {
             let since = date_or_first_of_the_month(since);
             let mut writer = TabWriter::new(stdout());
@@ -208,15 +249,23 @@ pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
                     .clone()
                     .runs(repository.clone(), workflow.filename(), since)
                     .boxed();
-                while let Some(run) = Pin::new(&mut runs).next().await {
-                    println!(
-                        "{} {} {} {}",
-                        run.id,
-                        run.conclusion.clone().unwrap_or_default(),
-                        humantime::format_duration(run.duration()),
-                        run.html_url.dimmed()
-                    );
-                }
+                Pin::new(&mut runs)
+                    .for_each_concurrent(Some(20), |run| {
+                        async move {
+                            println!(
+                                "{} {} {} {}",
+                                run.id,
+                                match &run.conclusion.clone().unwrap_or_default()[..] {
+                                    "failure" => "failure".red(),
+                                    "success" => "success".green(),
+                                    other => other.dimmed(),
+                                },
+                                format_duration(run.duration()),
+                                run.html_url.dimmed()
+                            )
+                        }
+                    })
+                    .await;
             }
             writer.flush()?;
         }
