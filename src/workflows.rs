@@ -17,6 +17,7 @@ use tabwriter::TabWriter;
 /// 🤹 Discover repository workflows
 #[derive(StructOpt, Debug)]
 pub enum Workflows {
+    /// List declared workflows
     List {
         /// GitHub repository in the form owner/repo
         #[structopt(short, long, env = "ACTIONS_REPOSITORY")]
@@ -25,6 +26,7 @@ pub enum Workflows {
         #[structopt(short, long, env = "ACTIONS_WORKFLOW")]
         workflow: Option<String>,
     },
+    // todo: Show
 }
 
 fn filtered_workflows(

@@ -5,9 +5,9 @@ use crate::{
 use chrono::{offset::TimeZone, DateTime, Datelike, Utc};
 use colored::Colorize;
 use futures::{stream::Stream, StreamExt};
+use humantime::format_duration;
 use reqwest::Client;
 use spinner::SpinnerBuilder;
-use humantime::format_duration;
 use std::{
     cell::RefCell,
     cmp, env,
