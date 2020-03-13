@@ -15,7 +15,7 @@ futures = "0.3"
 humantime = "2.0"
 humantime-serde = "1.0"
 hyperx = "1.0"
-reqwest = { version = "0.10", features = ["json"] }
+reqwest = { version = "0.10", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 spinner = "0.5"
 structopt = "0.3"
