@@ -95,24 +95,22 @@ async fn run_stats(
     since: DateTime<Utc>,
     runs: impl Stream<Item = Run>,
 ) -> RunStats {
-    runs.fold(RunStats::default(), |stats, run| {
-        async move {
-            if run.created_at < since {
-                return stats;
-            }
-            let RunStats {
-                count,
-                total,
-                min,
-                max,
-            } = stats;
-            let duration = run.duration();
-            RunStats {
-                count: count + 1,
-                total: total + duration,
-                min: Some(min.map_or(duration, |m| cmp::min(duration, m))),
-                max: Some(max.map_or(duration, |m| cmp::max(duration, m))),
-            }
+    runs.fold(RunStats::default(), |stats, run| async move {
+        if run.created_at < since {
+            return stats;
+        }
+        let RunStats {
+            count,
+            total,
+            min,
+            max,
+        } = stats;
+        let duration = run.duration();
+        RunStats {
+            count: count + 1,
+            total: total + duration,
+            min: Some(min.map_or(duration, |m| cmp::min(duration, m))),
+            max: Some(max.map_or(duration, |m| cmp::max(duration, m))),
         }
     })
     .await
@@ -189,8 +187,9 @@ pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
                         sum.clone(),
                     )
                 })
-                .for_each_concurrent(Some(20), |(workflow, requests, repository, writer, sum)| {
-                    async move {
+                .for_each_concurrent(
+                    Some(20),
+                    |(workflow, requests, repository, writer, sum)| async move {
                         let RunStats {
                             count,
                             total,
@@ -211,8 +210,8 @@ pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
                                 .unwrap_or_else(|| "-".into())
                         )
                         .unwrap();
-                    }
-                })
+                    },
+                )
                 .await;
             spinner.close();
             if let Some(mut t) = term::stdout() {
@@ -250,20 +249,18 @@ pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
                     .runs(repository.clone(), workflow.filename(), since)
                     .boxed();
                 Pin::new(&mut runs)
-                    .for_each_concurrent(Some(20), |run| {
-                        async move {
-                            println!(
-                                "{} {} {} {}",
-                                run.id,
-                                match &run.conclusion.clone().unwrap_or_default()[..] {
-                                    "failure" => "failure".red(),
-                                    "success" => "success".green(),
-                                    other => other.dimmed(),
-                                },
-                                format_duration(run.duration()),
-                                run.html_url.dimmed()
-                            )
-                        }
+                    .for_each_concurrent(Some(20), |run| async move {
+                        println!(
+                            "{} {} {} {}",
+                            run.id,
+                            match &run.conclusion.clone().unwrap_or_default()[..] {
+                                "failure" => "failure".red(),
+                                "success" => "success".green(),
+                                other => other.dimmed(),
+                            },
+                            format_duration(run.duration()),
+                            run.html_url.dimmed()
+                        )
                     })
                     .await;
             }

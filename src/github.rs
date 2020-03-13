@@ -197,14 +197,12 @@ impl Requests {
         )
         .fold(
             BTreeMap::default(),
-            move |mut state: BTreeMap<String, Vec<String>>, item| {
-                async {
-                    state
-                        .entry(item.repository.full_name)
-                        .or_insert_with(Vec::new)
-                        .push(item.path);
-                    state
-                }
+            move |mut state: BTreeMap<String, Vec<String>>, item| async {
+                state
+                    .entry(item.repository.full_name)
+                    .or_insert_with(Vec::new)
+                    .push(item.path);
+                state
             },
         )
         .await
