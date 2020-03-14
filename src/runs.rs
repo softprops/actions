@@ -12,6 +12,7 @@ use std::{
     cell::RefCell,
     cmp, env,
     error::Error,
+    future::Future,
     io::{stdout, Write},
     pin::Pin,
     rc::Rc,
@@ -177,42 +178,47 @@ pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
             let sum = Rc::new(RefCell::new(Duration::default()));
             let clone_writer = writer.clone();
             let clone_sum = sum.clone();
-            Pin::new(&mut workflows)
-                .map(move |workflow| {
-                    (
-                        workflow,
-                        requests.clone(),
-                        repository.clone(),
-                        writer.clone(),
-                        sum.clone(),
-                    )
-                })
-                .for_each_concurrent(
-                    Some(20),
-                    |(workflow, requests, repository, writer, sum)| async move {
-                        let RunStats {
-                            count,
-                            total,
-                            min,
-                            max,
-                        } = run_stats(since, requests.runs(repository, workflow.filename(), since))
-                            .await;
-                        *sum.borrow_mut() += total;
-                        writeln!(
-                            writer.clone().borrow_mut(),
-                            "{}\t{}\t{}\t{}\t{}",
-                            workflow.name.bold(),
-                            count,
-                            format_duration(total),
-                            min.map(|min| format_duration(min).to_string())
-                                .unwrap_or_else(|| "-".into()),
-                            max.map(|max| format_duration(max).to_string())
-                                .unwrap_or_else(|| "-".into())
+            let result: Pin<Box<dyn Future<Output = ()>>> = Box::pin(
+                Pin::new(&mut workflows)
+                    .map(move |workflow| {
+                        (
+                            workflow,
+                            requests.clone(),
+                            repository.clone(),
+                            writer.clone(),
+                            sum.clone(),
                         )
-                        .unwrap();
-                    },
-                )
-                .await;
+                    })
+                    .for_each_concurrent(
+                        Some(20),
+                        |(workflow, requests, repository, writer, sum)| async move {
+                            let RunStats {
+                                count,
+                                total,
+                                min,
+                                max,
+                            } = run_stats(
+                                since,
+                                requests.runs(repository, workflow.filename(), since),
+                            )
+                            .await;
+                            *sum.borrow_mut() += total;
+                            writeln!(
+                                writer.clone().borrow_mut(),
+                                "{}\t{}\t{}\t{}\t{}",
+                                workflow.name.bold(),
+                                count,
+                                format_duration(total),
+                                min.map(|min| format_duration(min).to_string())
+                                    .unwrap_or_else(|| "-".into()),
+                                max.map(|max| format_duration(max).to_string())
+                                    .unwrap_or_else(|| "-".into())
+                            )
+                            .unwrap();
+                        },
+                    ),
+            );
+            result.await;
             spinner.close();
             if let Some(mut t) = term::stdout() {
                 t.carriage_return()?;
