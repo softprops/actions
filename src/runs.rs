@@ -209,10 +209,14 @@ pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
                                 workflow.name.bold(),
                                 count,
                                 format_duration(total),
-                                min.map(|min| format_duration(min).to_string())
-                                    .unwrap_or_else(|| "-".into()),
-                                max.map(|max| format_duration(max).to_string())
-                                    .unwrap_or_else(|| "-".into())
+                                min.map_or_else(
+                                    || "-".into(),
+                                    |min| format_duration(min).to_string()
+                                ),
+                                max.map_or_else(
+                                    || "-".into(),
+                                    |max| format_duration(max).to_string()
+                                )
                             )
                             .unwrap();
                         },
