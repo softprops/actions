@@ -166,7 +166,11 @@ impl Requests {
                         let next = next_link(&response);
                         if !response.status().is_success() {
                             if let Some(clone) = clone {
-                                println!("request {:#?} was unsuccessful {:#?}", clone.build().ok()?.url(), response.status());
+                                println!(
+                                    "request {:#?} was unsuccessful {:#?}",
+                                    clone.build().ok()?.url(),
+                                    response.status()
+                                );
                                 println!("{}", response.text().await.ok()?);
                                 return None;
                             }
