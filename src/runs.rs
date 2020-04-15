@@ -199,7 +199,7 @@ pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
                                 max,
                             } = run_stats(
                                 since,
-                                requests.runs(repository, workflow.filename(), since),
+                                requests.runs(repository, workflow.id.to_string(), since),
                             )
                             .await;
                             *sum.borrow_mut() += total;
@@ -256,7 +256,7 @@ pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
             while let Some(workflow) = Pin::new(&mut workflows).next().await {
                 let mut runs = requests
                     .clone()
-                    .runs(repository.clone(), workflow.filename(), since)
+                    .runs(repository.clone(), workflow.id.to_string(), since)
                     .boxed();
                 Pin::new(&mut runs)
                     .for_each_concurrent(Some(20), |run| async move {
