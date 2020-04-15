@@ -161,8 +161,16 @@ impl Requests {
             async move {
                 match state {
                     PageState::Fetch(builder) => {
+                        let clone = builder.try_clone();
                         let response = builder.send().await.ok()?;
                         let next = next_link(&response);
+                        if !response.status().is_success() {
+                            if let Some(clone) = clone {
+                                println!("request {:#?} was unsuccessful {:#?}", clone.build().ok()?.url(), response.status());
+                                println!("{}", response.text().await.ok()?);
+                                return None;
+                            }
+                        }
                         let items = into(response.json::<P>().await.ok()?);
                         let next_state = match next {
                             Some(link) if cont(&items) => {
