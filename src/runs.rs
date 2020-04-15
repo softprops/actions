@@ -60,7 +60,7 @@ pub enum Runs {
         /// Workflow name
         #[structopt(short, long, env = "ACTIONS_WORKFLOW")]
         workflow: Option<String>,
-        /// Since date in yyyy-mm-dd format
+        /// Capture all run status since date in yyyy-mm-dd format
         #[structopt(short, long, env = "ACTIONS_SINCE")]
         since: Option<String>,
         /// Format of output 'tab' (default) or 'csv'
@@ -75,7 +75,7 @@ pub enum Runs {
         /// Workflow name
         #[structopt(short, long, env = "ACTIONS_WORKFLOW")]
         workflow: String,
-        /// Since date in yyyy-mm-dd format
+        /// List all runs since date in yyyy-mm-dd format
         #[structopt(short, long, env = "ACTIONS_SINCE")]
         since: Option<String>,
         /// Format of output 'tab' (default) or 'csv'
