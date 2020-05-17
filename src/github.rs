@@ -5,7 +5,7 @@ use futures::{
 };
 use hyperx::header::{Header, Link, RelationType};
 use reqwest::{header::LINK, RequestBuilder, Response};
-use serde::{de::DeserializeOwned, Deserialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{collections::BTreeMap, error::Error, time::Duration};
 use url::form_urlencoded::byte_serialize as urlencode;
 
@@ -34,6 +34,33 @@ pub struct Repo {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+pub struct Jobs {
+    pub jobs: Vec<Job>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct Job {
+    pub id: usize,
+    pub html_url: String,
+    pub status: String,
+    pub conclusion: Option<String>,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+    pub name: String,
+    pub steps: Vec<Step>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct Step {
+    pub name: String,
+    pub status: String,
+    pub conclusion: Option<String>,
+    pub number: usize,
+    pub started_at: Option<String>,
+    pub completed_at: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
 pub struct Artifacts {
     pub artifacts: Vec<Artifact>,
 }
@@ -48,7 +75,14 @@ pub struct Artifact {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Key {
+    pub key_id: String,
     pub key: String,
+}
+
+#[derive(Debug, Serialize, Clone)]
+pub struct SecretValue {
+    pub encrypted_value: String,
+    pub key_id: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -136,6 +170,14 @@ impl Requests {
         url: &str,
     ) -> RequestBuilder {
         self.builder(self.client.get(url))
+    }
+
+    fn put(
+        &self,
+        url: &str,
+    ) -> RequestBuilder {
+        self.builder(self.client.put(url))
+            .header("Content-Type", "application/json")
     }
 
     fn delete(
@@ -232,19 +274,39 @@ impl Requests {
     ///
     /// See the [developer docs](https://developer.github.com/v3/actions/secrets/#get-your-public-key) for more information
     pub async fn public_key(
-        self,
-        repository: String,
-    ) -> Result<String, Box<dyn Error>> {
+        &self,
+        repository: impl AsRef<str>,
+    ) -> Result<Key, Box<dyn Error>> {
         Ok(self
             .get(&format!(
                 "https://api.github.com/repos/{repo}/actions/secrets/public-key",
-                repo = repository
+                repo = repository.as_ref()
             ))
             .send()
             .await?
             .json::<Key>()
-            .await?
-            .key)
+            .await?)
+    }
+
+    pub async fn upsert_secret(
+        self,
+        repository: String,
+        name: String,
+        encrypted_value: String,
+        key_id: String,
+    ) -> Result<(), Box<dyn Error>> {
+        self.put(&format!(
+            "https://api.github.com/repos/{repo}/actions/secrets/{name}",
+            repo = repository,
+            name = name
+        ))
+        .json(&SecretValue {
+            encrypted_value,
+            key_id,
+        })
+        .send()
+        .await?;
+        Ok(())
     }
 
     pub async fn delete_secret(
@@ -302,6 +364,29 @@ impl Requests {
         self.paginate(
             PageState::Fetch(Box::new(builder)),
             |w: Artifacts| w.artifacts,
+            |_| true,
+        )
+    }
+
+    /// Lists jobs for a workflow run. Anyone with read access to the repository can use this endpoint. GitHub Apps must have the actions permission to use this endpoint. You can use parameters to narrow the list of results.
+    ///
+    /// See the [developer docs](https://developer.github.com/v3/actions/workflow_jobs/#list-jobs-for-a-workflow-run) for more information
+    pub fn jobs(
+        self,
+        repository: String,
+        run_id: usize,
+        filter: String,
+    ) -> impl Stream<Item = Job> {
+        let builder = self
+            .get(&format!(
+                "https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs",
+                repo = repository,
+                run_id = run_id
+            ))
+            .query(&[("per_page", "100"), ("filter", filter.as_str())]);
+        self.paginate(
+            PageState::Fetch(Box::new(builder)),
+            |jobs: Jobs| jobs.jobs,
             |_| true,
         )
     }

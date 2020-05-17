@@ -43,6 +43,7 @@ enum Options {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    pretty_env_logger::init();
     if let Err(msg) = match Options::from_args() {
         Options::Artifacts(args) => artifacts(args).await,
         Options::Repos(args) => repos(args).await,
