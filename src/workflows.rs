@@ -4,17 +4,17 @@ use crate::{
 };
 use colored::Colorize;
 use futures::{stream::Stream, StreamExt};
+use humantime::format_duration;
 use reqwest::Client;
 use std::{
     env,
     error::Error,
     io::{stdout, Write},
     pin::Pin,
+    time::Duration,
 };
-use std::time::Duration;
 use structopt::StructOpt;
 use tabwriter::TabWriter;
-use humantime::format_duration;
 
 /// 🤹 Get workflow information
 #[derive(StructOpt, Debug)]
@@ -30,14 +30,13 @@ pub enum Workflows {
     },
     /// List billable minutes declared workflows
     Usage {
-       /// GitHub repository in the form owner/repo
-       #[structopt(short, long, env = "ACTIONS_REPOSITORY")]
-       repository: String,
-       /// Workflow name
-       #[structopt(short, long, env = "ACTIONS_WORKFLOW")]
-       workflow: Option<String>,
-    }
-    // todo: Show
+        /// GitHub repository in the form owner/repo
+        #[structopt(short, long, env = "ACTIONS_REPOSITORY")]
+        repository: String,
+        /// Workflow name
+        #[structopt(short, long, env = "ACTIONS_WORKFLOW")]
+        workflow: Option<String>,
+    }, // todo: Show
 }
 
 fn filtered_workflows(
@@ -71,7 +70,9 @@ pub async fn workflows(args: Workflows) -> Result<(), Box<dyn Error>> {
                     .boxed();
             let sum = std::rc::Rc::new(std::cell::RefCell::new(Duration::default()));
             while let Some(workflow) = Pin::new(&mut workflows).next().await {
-                let usage = requests.workflow_usage(repository.clone(), workflow.id).await?;
+                let usage = requests
+                    .workflow_usage(repository.clone(), workflow.id)
+                    .await?;
                 let ubuntu = usage.ubuntu();
                 let macos = usage.macos();
                 let windows = usage.windows();

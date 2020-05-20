@@ -2,9 +2,9 @@
 use crate::{github::Requests, StringErr};
 use futures::stream::StreamExt;
 use reqwest::Client;
+use sodiumoxide::crypto::box_::{self, PublicKey};
 use std::{env, error::Error, pin::Pin};
 use structopt::StructOpt;
-use sodiumoxide::crypto::box_::{self, PublicKey};
 
 /// 🤫 Interact with workflow secrets
 #[derive(StructOpt, Debug)]
@@ -71,7 +71,7 @@ pub async fn secrets(args: Secrets) -> Result<(), Box<dyn Error>> {
         Secrets::Create {
             repository,
             name,
-            value
+            value,
         } => {
             let client = Client::new();
             let token = env::var("GITHUB_TOKEN")?;
@@ -82,7 +82,9 @@ pub async fn secrets(args: Secrets) -> Result<(), Box<dyn Error>> {
             let nonce = box_::gen_nonce();
             let encrypted = box_::seal(&value.as_bytes(), &nonce, &theirs, &ours);
             let encrypted_value = base64::encode(encrypted);
-            requests.upsert_secret(repository, name, encrypted_value, key_id).await?;
+            requests
+                .upsert_secret(repository, name, encrypted_value, key_id)
+                .await?;
         }
     }
 

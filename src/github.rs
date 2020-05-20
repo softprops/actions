@@ -138,26 +138,29 @@ impl Run {
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Usage {
-    pub billable: std::collections::BTreeMap<String, Timing>
+    pub billable: std::collections::BTreeMap<String, Timing>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Timing {
-    pub total_ms: u64
+    pub total_ms: u64,
 }
 
 impl Usage {
-    fn duration(&self, image: impl AsRef<str>) -> Duration {
-        Duration::from_millis(self.billable.get(image.as_ref()).map_or(0, |t| t.total_ms))                
+    fn duration(
+        &self,
+        image: impl AsRef<str>,
+    ) -> Duration {
+        Duration::from_millis(self.billable.get(image.as_ref()).map_or(0, |t| t.total_ms))
     }
     pub fn ubuntu(&self) -> Duration {
-        self.duration("UBUNTU")               
+        self.duration("UBUNTU")
     }
     pub fn macos(&self) -> Duration {
         self.duration("MACOS")
     }
     pub fn windows(&self) -> Duration {
-        self.duration("WINDOWS")              
+        self.duration("WINDOWS")
     }
 }
 
@@ -409,16 +412,18 @@ impl Requests {
     pub async fn workflow_usage(
         &self,
         repository: String,
-        workflow: usize
+        workflow: usize,
     ) -> Result<Usage, Box<dyn Error>> {
-        Ok(self.get(&format!(
-            "https://api.github.com/repos/{repo}/actions/workflows/{workflow}/timing",
-            repo = repository,
-            workflow = workflow
-        ))
-        .send()
-        .await?
-        .json().await?)
+        Ok(self
+            .get(&format!(
+                "https://api.github.com/repos/{repo}/actions/workflows/{workflow}/timing",
+                repo = repository,
+                workflow = workflow
+            ))
+            .send()
+            .await?
+            .json()
+            .await?)
     }
 
     /// Lists the workflows in a repository. Anyone with read access to the repository can use this endpoint.

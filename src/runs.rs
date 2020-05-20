@@ -9,11 +9,10 @@ use humantime::format_duration;
 use reqwest::Client;
 use std::{
     env,
-    str::FromStr,
     error::Error,
     io::{stdout, Write},
     pin::Pin,
-
+    str::FromStr,
 };
 use structopt::StructOpt;
 use tabwriter::TabWriter;
@@ -94,7 +93,6 @@ fn date_or_first_of_the_month(timestamp: Option<impl AsRef<str>>) -> DateTime<Ut
         })
 }
 
-
 pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
     match args {
         Runs::List {
@@ -121,22 +119,23 @@ pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
                     .runs(repository.clone(), workflow.id.to_string(), since)
                     .boxed();
                 Pin::new(&mut runs)
-                    .for_each_concurrent(Some(20),  |run| {
-                    let workflow = workflow.clone();
-                    async move {
-                        println!(
-                            "{} {} {} {} {}",
-                            workflow.name,
-                            run.id,
-                            match &run.conclusion.clone().unwrap_or_default()[..] {
-                                "failure" => "failure".red(),
-                                "success" => "success".green(),
-                                other => other.dimmed(),
-                            },
-                            format_duration(run.duration()),
-                            run.html_url.dimmed()
-                        )
-                    }})
+                    .for_each_concurrent(Some(20), |run| {
+                        let workflow = workflow.clone();
+                        async move {
+                            println!(
+                                "{} {} {} {} {}",
+                                workflow.name,
+                                run.id,
+                                match &run.conclusion.clone().unwrap_or_default()[..] {
+                                    "failure" => "failure".red(),
+                                    "success" => "success".green(),
+                                    other => other.dimmed(),
+                                },
+                                format_duration(run.duration()),
+                                run.html_url.dimmed()
+                            )
+                        }
+                    })
                     .await;
             }
             writer.flush()?;
