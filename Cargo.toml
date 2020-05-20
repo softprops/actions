@@ -21,7 +21,6 @@ humantime-serde = "1.0"
 hyperx = "1.0"
 reqwest = { version = "0.10", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
-spinner = "0.5"
 structopt = "0.3"
 tabwriter = { version = "1.2", features = ["ansi_formatting"] }
 tokio = { version = "0.2", features = ["full"] }

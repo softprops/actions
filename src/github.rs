@@ -108,12 +108,6 @@ pub struct Workflow {
     pub path: String,
 }
 
-impl Workflow {
-    pub fn filename(&self) -> String {
-        self.path.replace(".github/workflows/", "")
-    }
-}
-
 #[derive(Debug, Deserialize, Clone)]
 pub struct Runs {
     pub workflow_runs: Vec<Run>,
@@ -139,6 +133,31 @@ pub struct Run {
 impl Run {
     pub fn duration(&self) -> Duration {
         (self.updated_at - self.created_at).to_std().unwrap()
+    }
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct Usage {
+    pub billable: std::collections::BTreeMap<String, Timing>
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct Timing {
+    pub total_ms: u64
+}
+
+impl Usage {
+    fn duration(&self, image: impl AsRef<str>) -> Duration {
+        Duration::from_millis(self.billable.get(image.as_ref()).map_or(0, |t| t.total_ms))                
+    }
+    pub fn ubuntu(&self) -> Duration {
+        self.duration("UBUNTU")               
+    }
+    pub fn macos(&self) -> Duration {
+        self.duration("MACOS")
+    }
+    pub fn windows(&self) -> Duration {
+        self.duration("WINDOWS")              
     }
 }
 
@@ -368,29 +387,6 @@ impl Requests {
         )
     }
 
-    /// Lists jobs for a workflow run. Anyone with read access to the repository can use this endpoint. GitHub Apps must have the actions permission to use this endpoint. You can use parameters to narrow the list of results.
-    ///
-    /// See the [developer docs](https://developer.github.com/v3/actions/workflow_jobs/#list-jobs-for-a-workflow-run) for more information
-    pub fn jobs(
-        self,
-        repository: String,
-        run_id: usize,
-        filter: String,
-    ) -> impl Stream<Item = Job> {
-        let builder = self
-            .get(&format!(
-                "https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs",
-                repo = repository,
-                run_id = run_id
-            ))
-            .query(&[("per_page", "100"), ("filter", filter.as_str())]);
-        self.paginate(
-            PageState::Fetch(Box::new(builder)),
-            |jobs: Jobs| jobs.jobs,
-            |_| true,
-        )
-    }
-
     /// Deletes an artifact for a workflow run. Anyone with write access to the repository can use this endpoint. GitHub Apps must have the actions permission to use this endpoint.
     ///
     /// See the [developer docs](https://developer.github.com/v3/actions/artifacts/#delete-an-artifact) for more information
@@ -407,6 +403,22 @@ impl Requests {
         .send()
         .await?;
         Ok(())
+    }
+
+    /// Gets the number of billable minutes used by a specific workflow during the current billing cycle. Billable minutes only apply to workflows in private repositories that use GitHub-hosted runners. Usage is listed for each GitHub-hosted runner operating system in milliseconds. Any job re-runs are also included in the usage.
+    pub async fn workflow_usage(
+        &self,
+        repository: String,
+        workflow: usize
+    ) -> Result<Usage, Box<dyn Error>> {
+        Ok(self.get(&format!(
+            "https://api.github.com/repos/{repo}/actions/workflows/{workflow}/timing",
+            repo = repository,
+            workflow = workflow
+        ))
+        .send()
+        .await?
+        .json().await?)
     }
 
     /// Lists the workflows in a repository. Anyone with read access to the repository can use this endpoint.

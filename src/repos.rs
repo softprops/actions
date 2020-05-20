@@ -8,7 +8,7 @@ use std::{
 use structopt::StructOpt;
 use tabwriter::TabWriter;
 
-/// 🌌 repos using GitHub Actions
+/// 🌌 Discover repos using GitHub Actions (experimental)
 #[derive(StructOpt, Debug)]
 pub struct Repos {
     /// GitHub repository in the form `owner/repo`

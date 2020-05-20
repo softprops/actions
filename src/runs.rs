@@ -1,5 +1,5 @@
 use crate::{
-    github::{Requests, Run, Workflow},
+    github::{Requests, Workflow},
     StringErr,
 };
 use chrono::{offset::TimeZone, DateTime, Datelike, Utc};
@@ -7,17 +7,13 @@ use colored::Colorize;
 use futures::{stream::Stream, StreamExt};
 use humantime::format_duration;
 use reqwest::Client;
-use spinner::SpinnerBuilder;
 use std::{
-    cell::RefCell,
-    cmp, env,
+    env,
+    str::FromStr,
     error::Error,
-    future::Future,
     io::{stdout, Write},
     pin::Pin,
-    rc::Rc,
-    str::FromStr,
-    time::Duration,
+
 };
 use structopt::StructOpt;
 use tabwriter::TabWriter;
@@ -52,21 +48,6 @@ impl FromStr for Format {
 /// 🏃 Get workflow run information
 #[derive(StructOpt, Debug)]
 pub enum Runs {
-    /// Extract usage statistics for the current month
-    Stats {
-        /// GitHub repository in the form owner/repo
-        #[structopt(short, long, env = "ACTIONS_REPOSITORY")]
-        repository: String,
-        /// Workflow name
-        #[structopt(short, long, env = "ACTIONS_WORKFLOW")]
-        workflow: Option<String>,
-        /// Capture all run status since date in yyyy-mm-dd format
-        #[structopt(short, long, env = "ACTIONS_SINCE")]
-        since: Option<String>,
-        /// Format of output 'tab' (default) or 'csv'
-        #[structopt(default_value = "tab", short, long, env = "ACTIONS_FORMAT")]
-        format: Format,
-    },
     /// List runs for a given workflow
     List {
         /// GitHub repository in the form owner/repo
@@ -82,39 +63,6 @@ pub enum Runs {
         #[structopt(default_value = "tab", short, long, env = "ACTIONS_FORMAT")]
         format: Format,
     },
-}
-
-#[derive(Default, PartialEq, Debug)]
-struct RunStats {
-    count: usize,
-    total: Duration,
-    min: Option<Duration>,
-    max: Option<Duration>,
-}
-
-async fn run_stats(
-    since: DateTime<Utc>,
-    runs: impl Stream<Item = Run>,
-) -> RunStats {
-    runs.fold(RunStats::default(), |stats, run| async move {
-        if run.created_at < since {
-            return stats;
-        }
-        let RunStats {
-            count,
-            total,
-            min,
-            max,
-        } = stats;
-        let duration = run.duration();
-        RunStats {
-            count: count + 1,
-            total: total + duration,
-            min: Some(min.map_or(duration, |m| cmp::min(duration, m))),
-            max: Some(max.map_or(duration, |m| cmp::max(duration, m))),
-        }
-    })
-    .await
 }
 
 fn filtered_workflows(
@@ -146,95 +94,9 @@ fn date_or_first_of_the_month(timestamp: Option<impl AsRef<str>>) -> DateTime<Ut
         })
 }
 
-fn spinner() -> SpinnerBuilder {
-    SpinnerBuilder::new("Fetching run data...".into())
-        .spinner(vec!["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
-        .step(std::time::Duration::from_millis(100))
-}
 
 pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
     match args {
-        Runs::Stats {
-            repository,
-            workflow,
-            since,
-            ..
-        } => {
-            let since = date_or_first_of_the_month(since);
-            let writer = Rc::new(RefCell::new(TabWriter::new(stdout())));
-
-            let client = Client::new();
-            let token = env::var("GITHUB_TOKEN")
-                .map_err(|_| StringErr("Please provide a GITHUB_TOKEN env variable".into()))?;
-            let requests = Requests { client, token };
-            let spinner = spinner().start();
-            writeln!(
-                writer.clone().borrow_mut(),
-                "Workflow\tRuns\tTotal Duration\tMin Duration\tMax Duration"
-            )?;
-            let mut workflows =
-                filtered_workflows(workflow, requests.clone().workflows(repository.clone()))
-                    .boxed();
-            let sum = Rc::new(RefCell::new(Duration::default()));
-            let clone_writer = writer.clone();
-            let clone_sum = sum.clone();
-            let result: Pin<Box<dyn Future<Output = ()>>> = Box::pin(
-                Pin::new(&mut workflows)
-                    .map(move |workflow| {
-                        (
-                            workflow,
-                            requests.clone(),
-                            repository.clone(),
-                            writer.clone(),
-                            sum.clone(),
-                        )
-                    })
-                    .for_each_concurrent(
-                        Some(20),
-                        |(workflow, requests, repository, writer, sum)| async move {
-                            let RunStats {
-                                count,
-                                total,
-                                min,
-                                max,
-                            } = run_stats(
-                                since,
-                                requests.runs(repository, workflow.id.to_string(), since),
-                            )
-                            .await;
-                            *sum.borrow_mut() += total;
-                            writeln!(
-                                writer.clone().borrow_mut(),
-                                "{}\t{}\t{}\t{}\t{}",
-                                workflow.name.bold(),
-                                count,
-                                format_duration(total),
-                                min.map_or_else(
-                                    || "-".into(),
-                                    |min| format_duration(min).to_string()
-                                ),
-                                max.map_or_else(
-                                    || "-".into(),
-                                    |max| format_duration(max).to_string()
-                                )
-                            )
-                            .unwrap();
-                        },
-                    ),
-            );
-            result.await;
-            spinner.close();
-            if let Some(mut t) = term::stdout() {
-                t.carriage_return()?;
-                t.delete_line()?;
-            }
-
-            clone_writer.borrow_mut().flush()?;
-            println!(
-                "\nTotal minutes spent {}",
-                (clone_sum.borrow().as_secs() / 60).to_string().bold()
-            );
-        }
         Runs::List {
             repository,
             workflow,
@@ -259,9 +121,12 @@ pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
                     .runs(repository.clone(), workflow.id.to_string(), since)
                     .boxed();
                 Pin::new(&mut runs)
-                    .for_each_concurrent(Some(20), |run| async move {
+                    .for_each_concurrent(Some(20),  |run| {
+                    let workflow = workflow.clone();
+                    async move {
                         println!(
-                            "{} {} {} {}",
+                            "{} {} {} {} {}",
+                            workflow.name,
                             run.id,
                             match &run.conclusion.clone().unwrap_or_default()[..] {
                                 "failure" => "failure".red(),
@@ -271,7 +136,7 @@ pub async fn runs(args: Runs) -> Result<(), Box<dyn Error>> {
                             format_duration(run.duration()),
                             run.html_url.dimmed()
                         )
-                    })
+                    }})
                     .await;
             }
             writer.flush()?;
@@ -321,11 +186,5 @@ mod tests {
     fn date_or_first_of_the_month_parses_dates() {
         let since = date_or_first_of_the_month(Some("2020-03-12"));
         assert_eq!(since, Utc.ymd(2020, 3, 12).and_hms(0, 0, 0))
-    }
-
-    #[async_test]
-    async fn run_stats_yields_default_for_empty_runs() {
-        let since = date_or_first_of_the_month(Some("-"));
-        assert_eq!(run_stats(since, stream::empty()).await, RunStats::default());
     }
 }

@@ -11,10 +11,12 @@ use std::{
     io::{stdout, Write},
     pin::Pin,
 };
+use std::time::Duration;
 use structopt::StructOpt;
 use tabwriter::TabWriter;
+use humantime::format_duration;
 
-/// 🤹 Discover repository workflows
+/// 🤹 Get workflow information
 #[derive(StructOpt, Debug)]
 pub enum Workflows {
     /// List declared workflows
@@ -26,6 +28,15 @@ pub enum Workflows {
         #[structopt(short, long, env = "ACTIONS_WORKFLOW")]
         workflow: Option<String>,
     },
+    /// List billable minutes declared workflows
+    Usage {
+       /// GitHub repository in the form owner/repo
+       #[structopt(short, long, env = "ACTIONS_REPOSITORY")]
+       repository: String,
+       /// Workflow name
+       #[structopt(short, long, env = "ACTIONS_WORKFLOW")]
+       workflow: Option<String>,
+    }
     // todo: Show
 }
 
@@ -43,6 +54,43 @@ fn filtered_workflows(
 
 pub async fn workflows(args: Workflows) -> Result<(), Box<dyn Error>> {
     match args {
+        Workflows::Usage {
+            repository,
+            workflow,
+        } => {
+            let mut writer = TabWriter::new(stdout());
+
+            let client = Client::new();
+            let token = env::var("GITHUB_TOKEN")
+                .map_err(|_| StringErr("Please provide a GITHUB_TOKEN env variable".into()))?;
+            let requests = Requests { client, token };
+
+            writeln!(writer, "Workflow\tLinux\tMacOs\tWindows")?;
+            let mut workflows =
+                filtered_workflows(workflow, requests.clone().workflows(repository.clone()))
+                    .boxed();
+            let sum = std::rc::Rc::new(std::cell::RefCell::new(Duration::default()));
+            while let Some(workflow) = Pin::new(&mut workflows).next().await {
+                let usage = requests.workflow_usage(repository.clone(), workflow.id).await?;
+                let ubuntu = usage.ubuntu();
+                let macos = usage.macos();
+                let windows = usage.windows();
+                *sum.borrow_mut() += ubuntu + macos + windows;
+                writeln!(
+                    writer,
+                    "{}\t{}\t{}\t{}",
+                    workflow.name.bold(),
+                    format_duration(ubuntu),
+                    format_duration(macos),
+                    format_duration(windows),
+                )?;
+            }
+            writer.flush()?;
+            println!(
+                "\nTotal minutes spent {}",
+                (sum.borrow().as_secs() / 60).to_string().bold()
+            );
+        }
         Workflows::List {
             repository,
             workflow,
